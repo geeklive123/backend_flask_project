@@ -1,20 +1,28 @@
-from flask import Flask
-from models import db  # Importa el db desde models
-from routes.products import product_bp  # Importa el blueprint
-from config import Config  # Importa la configuración
+from flask import Flask, send_from_directory
+from database import db
+from models import Product, Categoria
+from routes.products import product_bp 
+from flask_cors import CORS
 
+# Inicializa la aplicación de Flask
 app = Flask(__name__)
 
-# Carga la configuración de la clase Config desde config.py
-app.config.from_object(Config)
+# Configura la URI de la base de datos
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:2021@localhost:3307/sobramat_db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Inicializa la base de datos con la app
+# Inicializa SQLAlchemy
 db.init_app(app)
 
-# Registra el blueprint para las rutas
-app.register_blueprint(product_bp)
+# Registra el Blueprint
+app.register_blueprint(product_bp, url_prefix='/products')
+
+# Habilita CORS
+CORS(app, origins=["http://localhost:5173"])
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory('uploads', filename)
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()  # Crea las tablas basadas en los modelos definidos
     app.run(debug=True)
