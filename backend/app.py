@@ -13,7 +13,9 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = 'uploads'  # Asegúrate de que esta carpeta exista
 
     db.init_app(app)
-    CORS(app, origins=["http://localhost:5173"])
+
+    # Configuración de CORS: permite todos los orígenes y métodos para pruebas
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(product_bp, url_prefix='/products')
