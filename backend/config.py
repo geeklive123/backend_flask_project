@@ -1,5 +1,5 @@
 import os
 
 class Config:
-    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:2021@localhost:3307/sobramat_db'
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+       UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')

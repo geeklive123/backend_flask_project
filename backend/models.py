@@ -38,7 +38,6 @@ class Product(db.Model):
             "usuario_id": self.usuario_id
         }
 
-
 class Categoria(db.Model):
     __tablename__ = 'categorias'
     id = db.Column(db.Integer, primary_key=True)
@@ -49,7 +48,6 @@ class Categoria(db.Model):
     def __init__(self, nombre, descripcion=None):
         self.nombre = nombre
         self.descripcion = descripcion
-
 
 class Usuarios(db.Model):
     __tablename__ = 'usuarios'

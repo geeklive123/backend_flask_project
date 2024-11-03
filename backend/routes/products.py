@@ -1,91 +1,48 @@
 import os
-from flask import Blueprint, request, jsonify
-from models import Product, Categoria, Usuarios  # Importa los modelos
-from database import db  # Importa 'db' desde 'database.py'
+import uuid
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from models import Product,Categoria
+from extensions import db
 
 product_bp = Blueprint('products', __name__)
-upload_folder = 'uploads'
 
-@product_bp.route('/categorias', methods=['GET'])
-def get_categorias():
-    try:
-        categorias = Categoria.query.all()
-        return jsonify([{'id': categoria.id, 'nombre': categoria.nombre} for categoria in categorias]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def upload_image_and_get_url(imagen_file):
+    # Crear un nombre de archivo único
+    image_filename = f"{uuid.uuid4()}.jpg"
+    upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], image_filename)
+    
+    # Guardar la imagen
+    imagen_file.save(upload_path)
+    
+    # Retornar la URL de la imagen
+    return f"http://localhost:5000/uploads/{image_filename}"
 
-# Ruta para obtener todos los productos
-@product_bp.route('/', methods=['GET'])
-def get_products():
-    try:
-        products = Product.query.all()
-        return jsonify([product.to_dict() for product in products]), 200
-    except Exception as e:
-        print(f"Error al obtener productos: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-# Ruta para obtener un producto por ID
-@product_bp.route('/<int:product_id>', methods=['GET'])
-def get_product(product_id):
-    product = Product.query.get(product_id)
-    if product is None:
-        return jsonify({"error": "Producto no encontrado"}), 404
-    return jsonify(product.to_dict()), 200
-
-# Función para manejar la creación o actualización de productos
-def process_product_data(request, product=None, usuario_id=None):
-    nombre = request.form.get('nombre_producto')
-    estado = request.form.get('estado_producto')
-    descripcion = request.form.get('descripcion')
-    precio = request.form.get('precio')
-    categoria_id = request.form.get('categoria_id')
-    departamento = request.form.get('departamento')
-    numero_celular = request.form.get('numero_celular')
-    imagen_file = request.files.get('imagen_url')
-
-    if not all([nombre, estado, descripcion, precio, categoria_id, departamento, numero_celular, imagen_file]) and product is None:
-        return jsonify({"error": "Faltan datos"}), 400
-
-    if precio:
-        try:
-            precio = float(precio)
-        except ValueError:
-            return jsonify({"error": "Precio inválido"}), 400
-
-    # Guarda la imagen si existe
-    if imagen_file and imagen_file.content_type.startswith('image/'):
-        filename = imagen_file.filename
-        imagen_path = os.path.join(upload_folder, filename)
-        imagen_file.save(imagen_path)
-        imagen_url = f'/uploads/{filename}'
-    elif product:
-        imagen_url = product.imagen_url
-    else:
-        return jsonify({"error": "Imagen no proporcionada o inválida"}), 400
-
-    return {
-        "nombre_producto": nombre,
-        "estado_producto": estado,
-        "descripcion": descripcion,
-        "precio": precio,
-        "categoria_id": int(categoria_id),
-        "departamento": departamento,
-        "numero_celular": numero_celular,
-        "imagen_url": imagen_url,
-        "usuario_id": usuario_id  # Agrega el usuario_id aquí
-    }
-
-# Ruta para agregar un nuevo producto
 @product_bp.route('/agregar-producto', methods=['POST'])
 def agregar_producto():
     try:
-        usuario_id = request.form.get('usuario_id')  # Obtén el usuario_id del formulario o de otra fuente
-        product_data = process_product_data(request, usuario_id=usuario_id)
+        data = request.form.to_dict()
+        
+        # Obtener la imagen de los archivos subidos
+        imagen_file = request.files.get('imagen_url')
 
-        if isinstance(product_data, dict) and "error" in product_data:
-            return jsonify(product_data), 400
+        # Procesar la imagen si se envía
+        if imagen_file:
+            imagen_url = upload_image_and_get_url(imagen_file)
+        else:
+            return jsonify({"error": "Se requiere una imagen"}), 400
 
-        nuevo_producto = Product(**product_data)
+        # Resto de los datos
+        nuevo_producto = Product(
+            nombre_producto=data['nombre_producto'],
+            estado_producto=data['estado_producto'],
+            precio=float(data['precio']),
+            descripcion=data['descripcion'],
+            categoria_id=int(data['categoria_id']),
+            departamento=data['departamento'],
+            numero_celular=data['numero_celular'],
+            imagen_url=imagen_url,
+            usuario_id=int(data['usuario_id'])
+        )
 
         db.session.add(nuevo_producto)
         db.session.commit()
@@ -93,34 +50,54 @@ def agregar_producto():
         return jsonify({"mensaje": "Producto agregado exitosamente", "producto": nuevo_producto.to_dict()}), 201
 
     except Exception as e:
-        print(f"Error en agregar_producto: {str(e)}")
         return jsonify({"error": "Ocurrió un error al agregar el producto", "detalles": str(e)}), 500
 
-        
-# Ruta para actualizar un producto por ID
+@product_bp.route('/usuario/<int:usuario_id>', methods=['GET'])
+def get_products_by_user(usuario_id):
+    try:
+        products = Product.query.filter_by(usuario_id=usuario_id).all()
+        return jsonify([product.to_dict() for product in products]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@product_bp.route('/', methods=['GET'])
+def get_products():
+    try:
+        products = Product.query.all()
+        return jsonify([product.to_dict() for product in products]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@product_bp.route('/<int:product_id>', methods=['GET'])
+def get_product(product_id):
+    product = Product.query.get(product_id)
+    if product is None:
+        return jsonify({"error": "Producto no encontrado"}), 404
+    return jsonify(product.to_dict()), 200
+
 @product_bp.route('/<int:product_id>', methods=['PUT'])
 def actualizar_producto(product_id):
     try:
-        usuario_id = request.form.get('usuario_id')  # Obtén el usuario_id del formulario o de otra fuente
-
         product = Product.query.get(product_id)
-        if product is None or product.usuario_id != usuario_id:
-            return jsonify({"error": "Producto no encontrado o no autorizado"}), 404
+        if product is None:
+            return jsonify({"error": "Producto no encontrado"}), 404
 
-        product_data = process_product_data(request, product, usuario_id=usuario_id)
-        if isinstance(product_data, dict) and "error" in product_data:
-            return jsonify(product_data), 400
+        data = request.form.to_dict()
+        imagen_file = request.files.get('imagen_url')
 
-        for key, value in product_data.items():
+        if imagen_file:
+            imagen_url = upload_image_and_get_url(imagen_file)
+            product.imagen_url = imagen_url  # Actualiza la imagen
+
+        for key, value in data.items():
             setattr(product, key, value)
 
         db.session.commit()
-        return jsonify({"mensaje": "Producto actualizado exitosamente"}), 200
+        return jsonify({"mensaje": "Producto actualizado exitosamente", "producto": product.to_dict()}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Ruta para eliminar un producto por ID
 @product_bp.route('/<int:product_id>', methods=['DELETE'])
 def eliminar_producto(product_id):
     try:
@@ -131,5 +108,40 @@ def eliminar_producto(product_id):
         db.session.delete(product)
         db.session.commit()
         return jsonify({"mensaje": "Producto eliminado exitosamente"}), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+@product_bp.route('/all', methods=['GET'])
+def get_all_products():
+    estado = request.args.get('estado')
+    categoria = request.args.get('categoria')
+    precio_max = request.args.get('precio')
+    departamento = request.args.get('departamento')
+
+    query = Product.query
+
+    if estado:
+        query = query.filter(Product.estado_producto == estado)  # Verifica que el atributo sea `estado_producto`
+    if categoria:
+        query = query.filter(Product.categoria_id == categoria)  # Asegúrate de que esto sea correcto
+    if precio_max:
+        query = query.filter(Product.precio <= float(precio_max))
+    if departamento:
+        query = query.filter(Product.departamento == departamento)
+
+    productos = query.all()
+    
+    return jsonify([producto.to_dict() for producto in productos]), 200
+@product_bp.route('/categories/all', methods=['GET'])
+def get_categories():
+    connection = get_db_connection()  # Conéctate a tu base de datos
+    cursor = connection.cursor()
+    
+    try:
+        cursor.execute("SELECT * FROM categorias")  # Cambia esto según tu estructura de base de datos
+        categories = cursor.fetchall()
+        result = [{"id": cat[0], "nombre": cat[1]} for cat in categories]  # Ajusta según el esquema de tu tabla
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"message": "Error al obtener categorías"}), 500
